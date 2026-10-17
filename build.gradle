@@ -1,0 +1,120 @@
+buildscript {
+    repositories {
+        maven { url = 'https://maven.minecraftforge.net' }
+        mavenCentral()
+    }
+    dependencies {
+        classpath group: 'net.minecraftforge.gradle', name: 'ForgeGradle', version: '5.1.+', changing: true
+    }
+}
+
+plugins {
+    id 'eclipse'
+    id 'idea'
+}
+
+apply plugin: 'net.minecraftforge.gradle'
+
+version = mod_version
+group = mod_group_id
+
+base {
+    archivesName = mod_id
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+println "Java: ${System.getProperty 'java.version'}, JVM: ${System.getProperty 'java.vm.version'} (${System.getProperty 'java.vendor'}), Arch: ${System.getProperty 'os.arch'}"
+
+minecraft {
+    mappings channel: mapping_channel, version: mapping_version
+
+    runs {
+        client {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            mods {
+                btesimplehats {
+                    source sourceSets.main
+                }
+            }
+        }
+        server {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            mods {
+                btesimplehats {
+                    source sourceSets.main
+                }
+            }
+        }
+    }
+}
+
+sourceSets.main.resources { srcDir 'src/generated/resources' }
+
+repositories {
+    mavenCentral()
+}
+
+// Jars de Curios en libs/ (ver dependencies y compileJava mas abajo).
+def curiosJars = files({ file('libs').listFiles()?.findAll { it.name.toLowerCase().startsWith('curios') && it.name.endsWith('.jar') } ?: [] })
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+
+    // SimpleHats: tipos reales (HatItem, HatItemDyeable, HatEntry,
+    // ModRegistry, UUIDHandler). compileOnly: no se empaqueta; en
+    // mods.toml SI es dependencia obligatoria, porque sin SimpleHats este
+    // addon no tiene sentido.
+    compileOnly files('libs/simplehats-forge-1.19.2-0.3.2.jar')
+
+    // Curios API: el jar de Curios que use el modpack (1.19.2, 5.1.x),
+    // copiado tal cual a libs/. Se coge cualquier jar cuyo nombre empiece
+    // por "curios" (sin distinguir mayusculas) para no atar el build a un
+    // nombre de fichero concreto.
+    compileOnly curiosJars
+}
+
+// Falla pronto y con un mensaje claro si falta el jar de Curios, en vez de
+// 30 errores de "package top.theillusivec4.curios... does not exist".
+tasks.named('compileJava').configure {
+    doFirst {
+        if (curiosJars.files.isEmpty()) {
+            throw new GradleException("Falta el jar de Curios en libs/ (p. ej. libs/curios-forge-1.19.2-5.1.x.jar). Copia el mismo que usa el modpack.")
+        }
+    }
+}
+
+tasks.named('processResources', ProcessResources).configure {
+    var replaceProperties = [
+            minecraft_version: minecraft_version, minecraft_version_range: minecraft_version_range,
+            forge_version: forge_version, forge_version_range: forge_version_range,
+            loader_version_range: loader_version_range,
+            mod_id: mod_id, mod_name: mod_name, mod_license: mod_license,
+            mod_version: mod_version, mod_authors: mod_authors, mod_description: mod_description,
+    ]
+    inputs.properties replaceProperties
+
+    filesMatching(['META-INF/mods.toml']) {
+        expand replaceProperties + [project: project]
+    }
+}
+
+jar {
+    manifest {
+        attributes([
+                "Specification-Title"     : mod_id,
+                "Specification-Vendor"    : "ArcaneAlloy",
+                "Specification-Version"   : "1",
+                "Implementation-Title"    : project.name,
+                "Implementation-Version"  : project.jar.archiveVersion,
+                "Implementation-Vendor"   : "ArcaneAlloy",
+                "Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
+        ])
+    }
+}
+
+jar.finalizedBy('reobfJar')
